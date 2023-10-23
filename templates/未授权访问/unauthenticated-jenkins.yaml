@@ -1,0 +1,23 @@
+id: unauthenticated-jenkins
+
+info:
+  name: Unauthenticated Jenkins Dashboard
+  author: 未授权访问
+  severity: high
+  tags: jenkins
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - Dashboard [Jenkins]
+        condition: and
+
+      - type: status
+        status:
+          - 200

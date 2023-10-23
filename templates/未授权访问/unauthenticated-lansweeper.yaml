@@ -1,0 +1,17 @@
+id: unauthenticated-lansweeper
+
+info:
+  name: Unauthenticated Lansweeper Instance
+  author: 未授权访问
+  severity: high
+  tags: lansweeper,unauth
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/Default.aspx"
+
+    matchers:
+      - type: word
+        words:
+          - "Main page - Lansweeper"
