@@ -2,11 +2,12 @@ package node
 
 import (
 	"encoding/json"
-	"github.com/gin-gonic/gin"
 	"net/url"
 	"path"
 	"time"
 	"webscan/internal/domain/entity"
+
+	"github.com/gin-gonic/gin"
 )
 
 // NewTaskHandler
@@ -100,13 +101,13 @@ func (n *Node) NewTaskHandler(c *gin.Context) {
 	//var scannerConfig entity.ScannerConfigs
 	scannerConfig := args.ScannerConfig
 	if args.ScannerConfig.RateLimit == 0 {
-		scannerConfig.RateLimit = 150
+		scannerConfig.RateLimit = 300
 	}
 	if args.ScannerConfig.BulkSize == 0 {
 		scannerConfig.BulkSize = 25
 	}
 	if args.ScannerConfig.Concurrency == 0 {
-		scannerConfig.Concurrency = 25
+		scannerConfig.Concurrency = 50
 	}
 
 	marshalScannerConfig, err := json.Marshal(scannerConfig)

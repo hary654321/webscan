@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/elastic/go-elasticsearch/v7"
-	"github.com/elastic/go-elasticsearch/v7/esapi"
-	"github.com/go-resty/resty/v2"
-	"gorm.io/gorm"
 	"strings"
 	"time"
 	"webscan/config"
@@ -16,6 +12,11 @@ import (
 	"webscan/internal/domain/repository"
 	"webscan/internal/model"
 	"webscan/utils/log"
+
+	"github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v7/esapi"
+	"github.com/go-resty/resty/v2"
+	"gorm.io/gorm"
 )
 
 type MasterRepositoryImpl struct {
@@ -362,7 +363,7 @@ func (m *MasterRepositoryImpl) CheckTaskIsOverLoop(interval int) {
 					}()
 
 					var tasks []model.Task
-					err := m.myMySQL.Find(&tasks).Error
+					err := m.myMySQL.Where("status", 1).Find(&tasks).Error
 					if err != nil {
 						m.logger.Errorf("find all task error: %s", err.Error())
 						return
@@ -388,7 +389,7 @@ func (m *MasterRepositoryImpl) CheckTaskIsOverLoop(interval int) {
 
 							if err != nil {
 								taskOver = false
-								m.logger.Errorf("find scan record error: %s", err.Error())
+								// m.logger.Errorf("find scan record error: %s", err.Error())
 								break
 							}
 							if scan.Pull == 0 {

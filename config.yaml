@@ -8,7 +8,7 @@ app:
 database:
   mysql: root:zrtx@2023@tcp(172.16.130.226:3306)/riskeval?charset=utf8mb4&parseTime=True&loc=Local
 #  elasticsearch: http://172.16.130.226:9200
-  elasticsearch: http://127.0.0.1:9200
+  elasticsearch: http://172.16.160.96:9200
 
 task:
   max_task_num: 2

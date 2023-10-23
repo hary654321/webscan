@@ -4,6 +4,16 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"strings"
+	"sync"
+	"time"
+	"webscan/internal/domain/entity"
+	"webscan/utils/nuclei/installer"
+	"webscan/utils/nuclei/runner"
+
 	"github.com/pkg/errors"
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
@@ -18,15 +28,6 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/types/scanstrategy"
 	"github.com/projectdiscovery/nuclei/v2/pkg/utils/monitor"
 	fileutil "github.com/projectdiscovery/utils/file"
-	"os"
-	"runtime"
-	"runtime/pprof"
-	"strings"
-	"sync"
-	"time"
-	"webscan/internal/domain/entity"
-	"webscan/utils/nuclei/installer"
-	"webscan/utils/nuclei/runner"
 )
 
 type ScannerInterface interface {
@@ -70,6 +71,7 @@ func (s *Nuclei) Start(task *entity.SlaveTask, templatesDir string, targets []st
 	//自定义options
 	options.Targets = targets
 	options.JSONLExport = output
+	options.Output = output
 	options.NoInteractsh = true
 	options.RateLimit = 1000
 	options.BulkSize = 250
@@ -181,6 +183,7 @@ func (s *Nuclei) StartV2(task *entity.NodeTask, templatesDir string, targets []s
 	//自定义options
 	options.Targets = targets
 	options.JSONLExport = output
+	options.Output = output
 	options.NoInteractsh = true
 	options.RateLimit = scannerConfig.RateLimit
 	options.BulkSize = scannerConfig.BulkSize
@@ -340,7 +343,7 @@ func initOptions() *types.Options {
 		flagSet.StringVarP(&options.StoreResponseDir, "store-resp-dir", "srd", runner.DefaultDumpTrafficOutputFolder, "store all request/response passed through nuclei to custom directory"),
 		flagSet.BoolVar(&options.Silent, "silent", false, "display findings only"),
 		flagSet.BoolVarP(&options.NoColor, "no-color", "nc", false, "disable output content coloring (ANSI escape codes)"),
-		flagSet.BoolVarP(&options.JSONL, "jsonl", "j", false, "write output in JSONL(ines) format"),
+		flagSet.BoolVarP(&options.JSONL, "jsonl", "j", true, "write output in JSONL(ines) format"),
 		flagSet.BoolVarP(&options.JSONRequests, "include-rr", "irr", true, "include request/response pairs in the JSON, JSONL, and Markdown outputs (for findings only) [DEPRECATED use `-omit-raw`]"),
 		flagSet.BoolVarP(&options.OmitRawRequests, "omit-raw", "or", false, "omit request/response pairs in the JSON, JSONL, and Markdown outputs (for findings only)"),
 		flagSet.BoolVarP(&options.NoMeta, "no-meta", "nm", false, "disable printing result metadata in cli output"),

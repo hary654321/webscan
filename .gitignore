@@ -1,2 +1,5 @@
 .idea
 vendor
+TASK_DATA_DIR
+LOG_DATA_DIR
+webscan.db

