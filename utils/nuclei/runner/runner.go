@@ -1,11 +1,13 @@
 package runner
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -58,6 +60,7 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/utils/yaml"
 	"github.com/projectdiscovery/retryablehttp-go"
 	ptrutil "github.com/projectdiscovery/utils/ptr"
+	stringsutil "github.com/projectdiscovery/utils/strings"
 )
 
 // Runner is a client for running the enumeration process.
@@ -65,6 +68,7 @@ type Runner struct {
 	output            output.Writer
 	interactsh        *interactsh.Client
 	options           *types.Options
+	templatesConfig   *config.Config
 	projectFile       *projectfile.ProjectFile
 	catalog           catalog.Catalog
 	progress          progress.Progress
@@ -428,11 +432,50 @@ func (r *Runner) Close() {
 // RunEnumeration sets up the input layer for giving input nuclei.
 // binary and runs the actual enumeration
 func (r *Runner) RunEnumeration() error {
+
+	options := r.options
+	// Initialize the input source
+	hmapInput, err := hybrid.New(&hybrid.Options{
+		Options: options,
+		NotFoundCallback: func(target string) bool {
+			if !options.Cloud {
+				return false
+			}
+			parsed, parseErr := strconv.ParseInt(target, 10, 64)
+			if parseErr != nil {
+				if err := r.cloudClient.ExistsDataSourceItem(nucleicloud.ExistsDataSourceItemRequest{Contents: target, Type: "targets"}); err == nil {
+					r.cloudTargets = append(r.cloudTargets, target)
+					return true
+				}
+				return false
+			}
+			if exists, err := r.cloudClient.ExistsTarget(parsed); err == nil {
+				r.cloudTargets = append(r.cloudTargets, exists.Reference)
+				return true
+			}
+			return false
+		},
+	})
+	if err != nil {
+		return errors.Wrap(err, "could not create input provider")
+	}
+	r.hmapInputProvider = hmapInput
+
+	outputWriter, err := output.NewStandardWriter(options)
+	if err != nil {
+		return errors.Wrap(err, "could not create output file")
+	}
+	// slog.Println(slog.DEBUG, "Output file created", outputWriter.filepath)
+	r.output = outputWriter
+
 	// If user asked for new templates to be executed, collect the list from the templates' directory.
+
 	if r.options.NewTemplates {
-		if arr := config.DefaultConfig.GetNewAdditions(); len(arr) > 0 {
-			r.options.Templates = append(r.options.Templates, arr...)
+		templatesLoaded, err := r.readNewTemplatesFile()
+		if err != nil {
+			return errors.Wrap(err, "could not get newly added templates")
 		}
+		r.options.Templates = append(r.options.Templates, templatesLoaded...)
 	}
 	if len(r.options.NewTemplatesWithVersion) > 0 {
 		if arr := installer.GetNewTemplatesInVersions(r.options.NewTemplatesWithVersion...); len(arr) > 0 {
@@ -802,4 +845,36 @@ func expandEndVars(f reflect.Value, fieldType reflect.StructField) {
 			}
 		}
 	}
+}
+
+// readNewTemplatesFile reads newly added templates from directory if it exists
+func (r *Runner) readNewTemplatesFile() ([]string, error) {
+	if r.templatesConfig == nil {
+		return nil, nil
+	}
+	additionsFile := filepath.Join(r.templatesConfig.TemplatesDirectory, ".new-additions")
+	file, err := os.Open(additionsFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	templatesList := []string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		text := scanner.Text()
+		if text == "" {
+			continue
+		}
+		if isTemplate(text) {
+			templatesList = append(templatesList, text)
+		}
+	}
+	return templatesList, nil
+}
+
+// isTemplate is a callback function used by goflags to decide if given file should be read
+// if it is not a nuclei-template file only then file is read
+func isTemplate(filename string) bool {
+	return stringsutil.EqualFoldAny(filepath.Ext(filename), config.GetSupportTemplateFileExtensions()...)
 }
