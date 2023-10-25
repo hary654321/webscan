@@ -218,40 +218,6 @@ func New(options *types.Options) (*Runner, error) {
 		os.Exit(0)
 	}
 
-	// Initialize the input source
-	hmapInput, err := hybrid.New(&hybrid.Options{
-		Options: options,
-		NotFoundCallback: func(target string) bool {
-			if !options.Cloud {
-				return false
-			}
-			parsed, parseErr := strconv.ParseInt(target, 10, 64)
-			if parseErr != nil {
-				if err := runner.cloudClient.ExistsDataSourceItem(nucleicloud.ExistsDataSourceItemRequest{Contents: target, Type: "targets"}); err == nil {
-					runner.cloudTargets = append(runner.cloudTargets, target)
-					return true
-				}
-				return false
-			}
-			if exists, err := runner.cloudClient.ExistsTarget(parsed); err == nil {
-				runner.cloudTargets = append(runner.cloudTargets, exists.Reference)
-				return true
-			}
-			return false
-		},
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create input provider")
-	}
-	runner.hmapInputProvider = hmapInput
-
-	// Create the output file if asked
-	outputWriter, err := output.NewStandardWriter(options)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create output file")
-	}
-	runner.output = outputWriter
-
 	if options.JSONL && options.EnableProgressBar {
 		options.StatsJSON = true
 	}
@@ -432,6 +398,43 @@ func (r *Runner) Close() {
 // RunEnumeration sets up the input layer for giving input nuclei.
 // binary and runs the actual enumeration
 func (r *Runner) RunEnumeration() error {
+
+	options := r.options
+	// Initialize the input source
+	hmapInput, err := hybrid.New(&hybrid.Options{
+		Options: options,
+		NotFoundCallback: func(target string) bool {
+			if !options.Cloud {
+				return false
+			}
+			parsed, parseErr := strconv.ParseInt(target, 10, 64)
+			if parseErr != nil {
+				if err := r.cloudClient.ExistsDataSourceItem(nucleicloud.ExistsDataSourceItemRequest{Contents: target, Type: "targets"}); err == nil {
+					r.cloudTargets = append(r.cloudTargets, target)
+					return true
+				}
+				return false
+			}
+			if exists, err := r.cloudClient.ExistsTarget(parsed); err == nil {
+				r.cloudTargets = append(r.cloudTargets, exists.Reference)
+				return true
+			}
+			return false
+		},
+	})
+	if err != nil {
+		return errors.Wrap(err, "could not create input provider")
+	}
+	r.hmapInputProvider = hmapInput
+
+	outputWriter, err := output.NewStandardWriter(options)
+	if err != nil {
+		return errors.Wrap(err, "could not create output file")
+	}
+	// slog.Println(slog.DEBUG, "Output file created", outputWriter.filepath)
+	r.output = outputWriter
+
+	// If user asked for new templates to be executed, collect the list from the templates' directory.
 
 	if r.options.NewTemplates {
 		templatesLoaded, err := r.readNewTemplatesFile()
