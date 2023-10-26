@@ -547,7 +547,7 @@ func initOptions() *types.Options {
 func cleanupOldResumeFiles() {
 	root := config.DefaultConfig.GetConfigDir()
 	filter := fileutil.FileFilters{
-		OlderThan: 24 * time.Hour * 10, // cleanup on the 10th day
+		OlderThan: 24 * time.Second * 10, // cleanup on the 10th day
 		Prefix:    "resume-",
 	}
 	_ = fileutil.DeleteFilesOlderThan(root, filter)

@@ -1,9 +1,10 @@
 package config
 
 import (
-	"github.com/spf13/viper"
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/viper"
 )
 
 type ConfigureInterface interface {
@@ -25,7 +26,7 @@ type Config struct {
 type App struct {
 	Role      string `json:"role"`
 	Address   string `json:"address"`
-	Port      int    `json:"port"`
+	Port      string `json:"port"`
 	Templates string `json:"templates"`
 }
 
@@ -91,7 +92,7 @@ func NewConfig(path string) *Config {
 	app := App{
 		Role:      v.GetString("app.role"),
 		Address:   v.GetString("app.address"),
-		Port:      v.GetInt("app.port"),
+		Port:      v.GetString("app.port"),
 		Templates: v.GetString("app.templates"),
 	}
 

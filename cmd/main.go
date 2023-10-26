@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/DeanThompson/ginpprof"
-	"github.com/gin-gonic/gin"
 	"webscan/config"
 	"webscan/internal/app"
 	cache2 "webscan/internal/infra/cache"
@@ -13,6 +11,9 @@ import (
 	"webscan/pkg/crawlergo"
 	"webscan/pkg/nuclei"
 	"webscan/utils/log"
+
+	"github.com/DeanThompson/ginpprof"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -79,5 +80,5 @@ func main() {
 			masterGroup.POST("/delete_task", masterAPI.DeleteTaskHandler)
 		}
 	}
-	r.Run(":18080")
+	r.Run(":" + conf.App.Port)
 }
