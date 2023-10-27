@@ -106,7 +106,7 @@ func (s *Nuclei) Stop() {
 	s.wg.Wait()
 }
 
-func (s *Nuclei) Start(task *entity.SlaveTask, templatesDir string, targets []string, output string) error {
+func (s *Nuclei) Start(task *entity.SlaveTask, templatesIds string, targets []string, output string) error {
 
 	if err := runnerSin.RunEnumeration(targets, output); err != nil {
 		if options.Validate {
@@ -120,7 +120,7 @@ func (s *Nuclei) Start(task *entity.SlaveTask, templatesDir string, targets []st
 	return nil
 }
 
-func (s *Nuclei) StartV2(task *entity.NodeTask, templatesDir string, targets []string, output string) error {
+func (s *Nuclei) StartV2(task *entity.NodeTask, templatesIds string, targets []string, output string) error {
 
 	if err := runnerSin.RunEnumeration(targets, output); err != nil {
 		if options.Validate {

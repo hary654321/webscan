@@ -53,6 +53,8 @@ type Log struct {
 	LogInConsole bool   `json:"log_in_console"`
 }
 
+var Conf Config
+
 func NewConfig(path string) *Config {
 	v := viper.New()
 
@@ -125,7 +127,7 @@ func NewConfig(path string) *Config {
 		Task:     task,
 		Log:      log,
 	}
-
+	Conf = *c
 	return c
 }
 

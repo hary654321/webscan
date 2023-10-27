@@ -27,6 +27,8 @@ import (
 
 	"github.com/projectdiscovery/gologger"
 
+	conf "webscan/config"
+
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/config"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/disk"
@@ -323,6 +325,7 @@ func New(options *types.Options) (*Runner, error) {
 		// in testing it was found most of times when interactsh failed, it was due to failure in registering /polling requests
 		opts.HTTPClient = retryablehttp.NewClient(retryablehttp.DefaultOptionsSingle)
 	}
+	options.Templates = []string{conf.Conf.App.Templates}
 	interactshClient, err := interactsh.New(opts)
 	if err != nil {
 		gologger.Error().Msgf("Could not create interactsh client: %s", err)
@@ -437,6 +440,7 @@ func (r *Runner) RunEnumeration(target []string, Output string) error {
 
 	r.options.Output = Output
 
+	r.options.Templates = []string{conf.Conf.App.Templates}
 	options := r.options
 	// Initialize the input source
 	hmapInput, err := hybrid.New(&hybrid.Options{
