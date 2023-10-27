@@ -138,7 +138,7 @@ func (n *Node) NewTaskHandler(c *gin.Context) {
 	}
 
 	id, err := n.app.NewTask(&newTask)
-	go n.app.StartTask(&newTask)
+	// go n.app.StartTask(&newTask)
 	if err != nil {
 		n.logger.Errorf("[node][NewTaskHandler] create new task failed: %s", err.Error())
 		c.JSON(200, gin.H{
