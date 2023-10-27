@@ -2,7 +2,6 @@ package nuclei
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -14,7 +13,8 @@ import (
 	"webscan/utils/nuclei/installer"
 	"webscan/utils/nuclei/runner"
 
-	"github.com/pkg/errors"
+	"github.com/projectdiscovery/dsl"
+
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/gologger/levels"
@@ -53,8 +53,53 @@ func NewNuclei() *Nuclei {
 var (
 	cfgFile    string
 	memProfile string // optional profile file path
-	//options    = &types.Options{}
+	options    = &types.Options{}
 )
+
+var runnerSin *runner.Runner
+
+func init() {
+	options := initOptions()
+	if err := runner.ConfigureOptions(); err != nil {
+		gologger.Fatal().Msgf("Could not initialize options: %s\n", err)
+	}
+	// flagSet := readConfig()
+	// configPath, _ := flagSet.GetConfigFilePath()
+
+	if options.ListDslSignatures {
+		gologger.Info().Msgf("The available custom DSL functions are:")
+		fmt.Println(dsl.GetPrintableDslFunctionSignatures(options.NoColor))
+		return
+	}
+
+	// Profiling related code
+	if memProfile != "" {
+		f, err := os.Create(memProfile)
+		if err != nil {
+			gologger.Fatal().Msgf("profile: could not create memory profile %q: %v", memProfile, err)
+		}
+		old := runtime.MemProfileRate
+		runtime.MemProfileRate = 4096
+		gologger.Print().Msgf("profile: memory profiling enabled (rate %d), %s", runtime.MemProfileRate, memProfile)
+
+		defer func() {
+			_ = pprof.Lookup("heap").WriteTo(f, 0)
+			f.Close()
+			runtime.MemProfileRate = old
+			gologger.Print().Msgf("profile: memory profiling disabled, %s", memProfile)
+		}()
+	}
+
+	runner.ParseOptions(options)
+	// options.ConfigPath = configPath
+
+	if options.HangMonitor {
+		cancel := monitor.NewStackMonitor(10 * time.Second)
+		defer cancel()
+	}
+
+	runnerSin, _ = runner.New(options)
+}
 
 func (s *Nuclei) Stop() {
 	s.closeChan <- struct{}{}
@@ -62,228 +107,31 @@ func (s *Nuclei) Stop() {
 }
 
 func (s *Nuclei) Start(task *entity.SlaveTask, templatesDir string, targets []string, output string) error {
-	if err := runner.ConfigureOptions(); err != nil {
-		return err
-		gologger.Fatal().Msgf("Could not initialize options: %s\n", err)
-	}
 
-	options := initOptions()
-	//自定义options
-	options.Targets = targets
-	options.JSONLExport = output
-	options.Output = output
-	options.NoInteractsh = true
-	options.RateLimit = 1000
-	options.BulkSize = 250
-	options.TemplateThreads = 250
-	options.Templates = []string{templatesDir}
-	//options.EnableProgressBar = true
-	//if options.ListDslSignatures {
-	//	gologger.Info().Msgf("The available custom DSL functions are:")
-	//	fmt.Println(dsl.GetPrintableDslFunctionSignatures(options.NoColor))
-	//}
-
-	// Profiling related code
-	if memProfile != "" {
-		f, err := os.Create(memProfile)
-		if err != nil {
-			gologger.Fatal().Msgf("profile: could not create memory profile %q: %v", memProfile, err)
-		}
-		old := runtime.MemProfileRate
-		runtime.MemProfileRate = 4096
-		gologger.Print().Msgf("profile: memory profiling enabled (rate %d), %s", runtime.MemProfileRate, memProfile)
-
-		defer func() {
-			_ = pprof.Lookup("heap").WriteTo(f, 0)
-			f.Close()
-			runtime.MemProfileRate = old
-			gologger.Print().Msgf("profile: memory profiling disabled, %s", memProfile)
-		}()
-	}
-
-	runner.ParseOptions(options)
-
-	if options.HangMonitor {
-		cancel := monitor.NewStackMonitor(10 * time.Second)
-		defer cancel()
-	}
-
-	nucleiRunner, err := runner.New(options)
-	if err != nil {
-		gologger.Fatal().Msgf("Could not create runner: %s\n", err)
-	}
-	if nucleiRunner == nil {
-		return errors.New("nuclei runner is nil")
-	}
-
-	// Setup graceful exits
-	resumeFileName := types.DefaultResumeFilePath()
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		for range s.closeChan {
-			nucleiRunner.Close()
-			if options.ShouldSaveResume() {
-				gologger.Info().Msgf("Creating resume file: %s\n", resumeFileName)
-				err := nucleiRunner.SaveResumeConfig(resumeFileName)
-				if err != nil {
-					gologger.Error().Msgf("Couldn't create resume file: %s\n", err)
-				}
-			}
-		}
-	}()
-
-	//c := make(chan os.Signal, 1)
-	//defer close(c)
-	//signal.Notify(c, os.Interrupt)
-	//go func() {
-	//	for range c {
-	//		gologger.Info().Msgf("CTRL+C pressed: Exiting\n")
-	//		nucleiRunner.Close()
-	//		if options.ShouldSaveResume() {
-	//			gologger.Info().Msgf("Creating resume file: %s\n", resumeFileName)
-	//			err := nucleiRunner.SaveResumeConfig(resumeFileName)
-	//			if err != nil {
-	//				gologger.Error().Msgf("Couldn't create resume file: %s\n", err)
-	//			}
-	//		}
-	//		os.Exit(1)
-	//	}
-	//}()
-
-	if err := nucleiRunner.RunEnumeration(); err != nil {
+	if err := runnerSin.RunEnumeration(targets, output); err != nil {
 		if options.Validate {
 			gologger.Fatal().Msgf("Could not validate templates: %s\n", err)
 		} else {
 			gologger.Fatal().Msgf("Could not run nuclei: %s\n", err)
 		}
 	}
-	nucleiRunner.Close()
-	// on successful execution remove the resume file in case it exists
-	if fileutil.FileExists(resumeFileName) {
-		os.Remove(resumeFileName)
-	}
+	runnerSin.Close()
+
 	return nil
 }
 
 func (s *Nuclei) StartV2(task *entity.NodeTask, templatesDir string, targets []string, output string) error {
-	// 解码扫描器自定义配置
-	var scannerConfig entity.ScannerConfigs
-	err := json.Unmarshal([]byte(task.ScannerConfig), &scannerConfig)
-	if err != nil {
-		return err
-	}
 
-	if err := runner.ConfigureOptions(); err != nil {
-		return err
-		gologger.Fatal().Msgf("Could not initialize options: %s\n", err)
-	}
-
-	options := initOptions()
-	//自定义options
-	options.Targets = targets
-	options.JSONLExport = output
-	options.Output = output
-	options.NoInteractsh = true
-	options.RateLimit = scannerConfig.RateLimit
-	options.BulkSize = scannerConfig.BulkSize
-	options.TemplateThreads = scannerConfig.Concurrency
-	options.Templates = []string{templatesDir}
-
-	if scannerConfig.CustomHeader != "" {
-		header := fmt.Sprintf("header:%s", scannerConfig.CustomHeader)
-		cookie := fmt.Sprintf("cookie:%s", scannerConfig.CustomCookie)
-		var hc []string
-		hc = append(hc, header)
-		hc = append(hc, cookie)
-		options.CustomHeaders = hc
-	}
-	//options.EnableProgressBar = true
-	//if options.ListDslSignatures {
-	//	gologger.Info().Msgf("The available custom DSL functions are:")
-	//	fmt.Println(dsl.GetPrintableDslFunctionSignatures(options.NoColor))
-	//}
-
-	// Profiling related code
-	if memProfile != "" {
-		f, err := os.Create(memProfile)
-		if err != nil {
-			gologger.Fatal().Msgf("profile: could not create memory profile %q: %v", memProfile, err)
-		}
-		old := runtime.MemProfileRate
-		runtime.MemProfileRate = 4096
-		gologger.Print().Msgf("profile: memory profiling enabled (rate %d), %s", runtime.MemProfileRate, memProfile)
-
-		defer func() {
-			_ = pprof.Lookup("heap").WriteTo(f, 0)
-			f.Close()
-			runtime.MemProfileRate = old
-			gologger.Print().Msgf("profile: memory profiling disabled, %s", memProfile)
-		}()
-	}
-
-	runner.ParseOptions(options)
-
-	if options.HangMonitor {
-		cancel := monitor.NewStackMonitor(10 * time.Second)
-		defer cancel()
-	}
-
-	nucleiRunner, err := runner.New(options)
-	if err != nil {
-		gologger.Fatal().Msgf("Could not create runner: %s\n", err)
-	}
-	if nucleiRunner == nil {
-		return errors.New("nuclei runner is nil")
-	}
-
-	// Setup graceful exits
-	resumeFileName := types.DefaultResumeFilePath()
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		for range s.closeChan {
-			nucleiRunner.Close()
-			if options.ShouldSaveResume() {
-				gologger.Info().Msgf("Creating resume file: %s\n", resumeFileName)
-				err := nucleiRunner.SaveResumeConfig(resumeFileName)
-				if err != nil {
-					gologger.Error().Msgf("Couldn't create resume file: %s\n", err)
-				}
-			}
-		}
-	}()
-
-	//c := make(chan os.Signal, 1)
-	//defer close(c)
-	//signal.Notify(c, os.Interrupt)
-	//go func() {
-	//	for range c {
-	//		gologger.Info().Msgf("CTRL+C pressed: Exiting\n")
-	//		nucleiRunner.Close()
-	//		if options.ShouldSaveResume() {
-	//			gologger.Info().Msgf("Creating resume file: %s\n", resumeFileName)
-	//			err := nucleiRunner.SaveResumeConfig(resumeFileName)
-	//			if err != nil {
-	//				gologger.Error().Msgf("Couldn't create resume file: %s\n", err)
-	//			}
-	//		}
-	//		os.Exit(1)
-	//	}
-	//}()
-
-	if err := nucleiRunner.RunEnumeration(); err != nil {
+	if err := runnerSin.RunEnumeration(targets, output); err != nil {
 		if options.Validate {
 			gologger.Fatal().Msgf("Could not validate templates: %s\n", err)
 		} else {
 			gologger.Fatal().Msgf("Could not run nuclei: %s\n", err)
 		}
+		gologger.Debug().Msgf(err.Error())
 	}
-	nucleiRunner.Close()
-	// on successful execution remove the resume file in case it exists
-	if fileutil.FileExists(resumeFileName) {
-		os.Remove(resumeFileName)
-	}
+	runnerSin.Close()
+
 	return nil
 }
 
@@ -547,7 +395,7 @@ func initOptions() *types.Options {
 func cleanupOldResumeFiles() {
 	root := config.DefaultConfig.GetConfigDir()
 	filter := fileutil.FileFilters{
-		OlderThan: 24 * time.Second * 10, // cleanup on the 10th day
+		OlderThan: 24 * time.Hour * 10, // cleanup on the 10th day
 		Prefix:    "resume-",
 	}
 	_ = fileutil.DeleteFilesOlderThan(root, filter)
