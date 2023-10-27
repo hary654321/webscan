@@ -27,8 +27,6 @@ import (
 
 	"github.com/projectdiscovery/gologger"
 
-	conf "webscan/config"
-
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/config"
 	"github.com/projectdiscovery/nuclei/v2/pkg/catalog/disk"
@@ -220,40 +218,6 @@ func New(options *types.Options) (*Runner, error) {
 		os.Exit(0)
 	}
 
-	// Initialize the input source
-	hmapInput, err := hybrid.New(&hybrid.Options{
-		Options: options,
-		NotFoundCallback: func(target string) bool {
-			if !options.Cloud {
-				return false
-			}
-			parsed, parseErr := strconv.ParseInt(target, 10, 64)
-			if parseErr != nil {
-				if err := runner.cloudClient.ExistsDataSourceItem(nucleicloud.ExistsDataSourceItemRequest{Contents: target, Type: "targets"}); err == nil {
-					runner.cloudTargets = append(runner.cloudTargets, target)
-					return true
-				}
-				return false
-			}
-			if exists, err := runner.cloudClient.ExistsTarget(parsed); err == nil {
-				runner.cloudTargets = append(runner.cloudTargets, exists.Reference)
-				return true
-			}
-			return false
-		},
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create input provider")
-	}
-	runner.hmapInputProvider = hmapInput
-
-	// Create the output file if asked
-	outputWriter, err := output.NewStandardWriter(options)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create output file")
-	}
-	runner.output = outputWriter
-
 	if options.JSONL && options.EnableProgressBar {
 		options.StatsJSON = true
 	}
@@ -325,7 +289,6 @@ func New(options *types.Options) (*Runner, error) {
 		// in testing it was found most of times when interactsh failed, it was due to failure in registering /polling requests
 		opts.HTTPClient = retryablehttp.NewClient(retryablehttp.DefaultOptionsSingle)
 	}
-	options.Templates = []string{conf.Conf.App.Templates}
 	interactshClient, err := interactsh.New(opts)
 	if err != nil {
 		gologger.Error().Msgf("Could not create interactsh client: %s", err)
@@ -434,13 +397,8 @@ func (r *Runner) Close() {
 
 // RunEnumeration sets up the input layer for giving input nuclei.
 // binary and runs the actual enumeration
-func (r *Runner) RunEnumeration(target []string, Output string) error {
+func (r *Runner) RunEnumeration() error {
 
-	r.options.Targets = target
-
-	r.options.Output = Output
-
-	r.options.Templates = []string{conf.Conf.App.Templates}
 	options := r.options
 	// Initialize the input source
 	hmapInput, err := hybrid.New(&hybrid.Options{
@@ -536,6 +494,17 @@ func (r *Runner) RunEnumeration(target []string, Output string) error {
 		return errors.Wrap(err, "could not load templates from config")
 	}
 
+	if r.options.Validate {
+		if err := store.ValidateTemplates(); err != nil {
+			return err
+		}
+		if stats.GetValue(parsers.SyntaxErrorStats) == 0 && stats.GetValue(parsers.SyntaxWarningStats) == 0 && stats.GetValue(parsers.RuntimeWarningsStats) == 0 {
+			gologger.Info().Msgf("All templates validated successfully\n")
+		} else {
+			return errors.New("encountered errors while performing template validation")
+		}
+		return nil // exit
+	}
 	store.Load()
 	// TODO: remove below functions after v3 or update warning messages
 	disk.PrintDeprecatedPathsMsgIfApplicable(r.options.Silent)
@@ -558,7 +527,6 @@ func (r *Runner) RunEnumeration(target []string, Output string) error {
 	// list all templates
 	if r.options.TemplateList || r.options.TemplateDisplay {
 		r.listAvailableStoreTemplates(store)
-		gologger.Debug().Msgf("r.options.TemplateList || r.options.TemplateDisplay")
 		os.Exit(0)
 	}
 
@@ -579,10 +547,6 @@ func (r *Runner) RunEnumeration(target []string, Output string) error {
 	var results *atomic.Bool
 
 	results, err = r.runStandardEnumeration(executorOpts, store, executorEngine)
-
-	if err != nil {
-		return errors.Wrap(err, "runStandardEnumeration")
-	}
 
 	if r.interactsh != nil {
 		matched := r.interactsh.Close()
@@ -650,6 +614,8 @@ func (r *Runner) executeTemplatesInput(store *loader.Store, engine *core.Engine)
 	for _, template := range store.Templates() {
 		// workflows will dynamically adjust the totals while running, as
 		// it can't be known in advance which requests will be called
+
+		// gologger.Info().Msgf("模板走", template.Info.Name)
 		if len(template.Workflows) > 0 {
 			continue
 		}
