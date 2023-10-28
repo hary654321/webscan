@@ -1,0 +1,2 @@
+{"level":"info","ts":"2023-10-28T02:32:03.508-0700","caller":"cmd/main.go:26","msg":"logger init success!"}
+{"level":"info","ts":"2023-10-28T02:38:53.568-0700","caller":"cmd/main.go:26","msg":"logger init success!"}

@@ -3,8 +3,8 @@ app:
   address: 127.0.0.1
   port: 18080
   #templates: C:\\Users\\Administrator\\nuclei-templates
-  templates: templates
-  scanner: scanner.exe
+  templates: tt
+  scanner: scanner
 
 database:
   mysql: root:zrtx@2023@tcp(172.16.130.226:3306)/riskeval?charset=utf8mb4&parseTime=True&loc=Local
