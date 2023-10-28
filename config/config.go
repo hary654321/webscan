@@ -1,10 +1,9 @@
 package config
 
 import (
+	"github.com/spf13/viper"
 	"os"
 	"path/filepath"
-
-	"github.com/spf13/viper"
 )
 
 type ConfigureInterface interface {
@@ -26,8 +25,9 @@ type Config struct {
 type App struct {
 	Role      string `json:"role"`
 	Address   string `json:"address"`
-	Port      string `json:"port"`
+	Port      int    `json:"port"`
 	Templates string `json:"templates"`
+	Scanner   string `json:"scanner"`
 }
 
 type Database struct {
@@ -52,8 +52,6 @@ type Log struct {
 	ShowLine     bool   `json:"show_line"`
 	LogInConsole bool   `json:"log_in_console"`
 }
-
-var Conf Config
 
 func NewConfig(path string) *Config {
 	v := viper.New()
@@ -94,8 +92,9 @@ func NewConfig(path string) *Config {
 	app := App{
 		Role:      v.GetString("app.role"),
 		Address:   v.GetString("app.address"),
-		Port:      v.GetString("app.port"),
+		Port:      v.GetInt("app.port"),
 		Templates: v.GetString("app.templates"),
+		Scanner:   v.GetString("app.scanner"),
 	}
 
 	database := Database{
@@ -127,7 +126,7 @@ func NewConfig(path string) *Config {
 		Task:     task,
 		Log:      log,
 	}
-	Conf = *c
+
 	return c
 }
 
@@ -180,6 +179,18 @@ func (c *Config) InitCheck() {
 			panic(err)
 		}
 		c.App.Templates = filepath.Join(currentDir, c.App.Templates)
+	}
+
+	// 检查扫描器是否是绝对路径
+	scannerIsAbsolute := filepath.IsAbs(c.App.Scanner)
+	// 如果不是绝对路径，使用当前路径拼接
+	if !scannerIsAbsolute {
+		// 获取当前工作目录的路径
+		currentDir, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+		c.App.Scanner = filepath.Join(currentDir, c.App.Scanner)
 	}
 }
 

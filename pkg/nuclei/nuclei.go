@@ -4,16 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"os"
-	"runtime"
-	"runtime/pprof"
-	"strings"
-	"sync"
-	"time"
-	"webscan/internal/domain/entity"
-	"webscan/utils/nuclei/installer"
-	"webscan/utils/nuclei/runner"
-
 	"github.com/pkg/errors"
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/gologger"
@@ -28,11 +18,23 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/types/scanstrategy"
 	"github.com/projectdiscovery/nuclei/v2/pkg/utils/monitor"
 	fileutil "github.com/projectdiscovery/utils/file"
+	"os"
+	"os/exec"
+	"runtime"
+	"runtime/pprof"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"webscan/internal/domain/entity"
+	"webscan/utils/nuclei/installer"
+	"webscan/utils/nuclei/runner"
 )
 
 type ScannerInterface interface {
 	Start(task *entity.SlaveTask, templatesDir string, targets []string, output string) error
 	StartV2(task *entity.NodeTask, templatesDir string, targets []string, output string) error
+	StartV3(task *entity.NodeTask, scannerPath, templatesDir string, targets []string, output string) error
 	Stop()
 }
 
@@ -71,7 +73,6 @@ func (s *Nuclei) Start(task *entity.SlaveTask, templatesDir string, targets []st
 	//自定义options
 	options.Targets = targets
 	options.JSONLExport = output
-	options.Output = output
 	options.NoInteractsh = true
 	options.RateLimit = 1000
 	options.BulkSize = 250
@@ -183,7 +184,6 @@ func (s *Nuclei) StartV2(task *entity.NodeTask, templatesDir string, targets []s
 	//自定义options
 	options.Targets = targets
 	options.JSONLExport = output
-	options.Output = output
 	options.NoInteractsh = true
 	options.RateLimit = scannerConfig.RateLimit
 	options.BulkSize = scannerConfig.BulkSize
@@ -343,7 +343,7 @@ func initOptions() *types.Options {
 		flagSet.StringVarP(&options.StoreResponseDir, "store-resp-dir", "srd", runner.DefaultDumpTrafficOutputFolder, "store all request/response passed through nuclei to custom directory"),
 		flagSet.BoolVar(&options.Silent, "silent", false, "display findings only"),
 		flagSet.BoolVarP(&options.NoColor, "no-color", "nc", false, "disable output content coloring (ANSI escape codes)"),
-		flagSet.BoolVarP(&options.JSONL, "jsonl", "j", true, "write output in JSONL(ines) format"),
+		flagSet.BoolVarP(&options.JSONL, "jsonl", "j", false, "write output in JSONL(ines) format"),
 		flagSet.BoolVarP(&options.JSONRequests, "include-rr", "irr", true, "include request/response pairs in the JSON, JSONL, and Markdown outputs (for findings only) [DEPRECATED use `-omit-raw`]"),
 		flagSet.BoolVarP(&options.OmitRawRequests, "omit-raw", "or", false, "omit request/response pairs in the JSON, JSONL, and Markdown outputs (for findings only)"),
 		flagSet.BoolVarP(&options.NoMeta, "no-meta", "nm", false, "disable printing result metadata in cli output"),
@@ -547,7 +547,7 @@ func initOptions() *types.Options {
 func cleanupOldResumeFiles() {
 	root := config.DefaultConfig.GetConfigDir()
 	filter := fileutil.FileFilters{
-		OlderThan: 24 * time.Second * 10, // cleanup on the 10th day
+		OlderThan: 24 * time.Hour * 10, // cleanup on the 10th day
 		Prefix:    "resume-",
 	}
 	_ = fileutil.DeleteFilesOlderThan(root, filter)
@@ -659,3 +659,62 @@ Note: Make sure you have backup of your custom nuclei-templates before proceedin
 //		errorutil.ShowStackTrace = true
 //	}
 //}
+
+func (s *Nuclei) StartV3(task *entity.NodeTask, scannerPath, templatesDir string, targets []string, output string) error {
+	// 解码扫描器自定义配置
+	var scannerConfig entity.ScannerConfigs
+	err := json.Unmarshal([]byte(task.ScannerConfig), &scannerConfig)
+	if err != nil {
+		return err
+	}
+
+	if err := runner.ConfigureOptions(); err != nil {
+		return err
+	}
+
+	cmdName := scannerPath
+	cmdArgs := []string{
+		//"-list", targets,
+		"-target", strings.Join(targets, ","),
+		//"-t", e.Templates[0],
+		"-jsonl-export", output,
+		"-no-interactsh",
+		"-rate-limit", strconv.Itoa(scannerConfig.RateLimit),
+		"-bulk-size", strconv.Itoa(scannerConfig.BulkSize),
+		"-concurrency", strconv.Itoa(scannerConfig.Concurrency),
+		"-templates", templatesDir,
+	}
+	if scannerConfig.CustomHeader != "" {
+		header := fmt.Sprintf("header:%s", scannerConfig.CustomHeader)
+		cookie := fmt.Sprintf("cookie:%s", scannerConfig.CustomCookie)
+		var hc []string
+		hc = append(hc, header)
+		hc = append(hc, cookie)
+
+		cmdArgs = append(cmdArgs, "-header")
+		cmdArgs = append(cmdArgs, strings.Join(hc, ","))
+	}
+
+	// 执行外部命令
+	cmd := exec.Command(cmdName, cmdArgs...)
+
+	//// 捕获命令的输出
+	//out, err := cmd.CombinedOutput()
+	//if err != nil {
+	//	fmt.Print("-----------> err: ", err.Error())
+	//	return err
+	//}
+	//fmt.Print(string(out))
+	//cmd.Process.Kill()
+	// 创建一个输出管道
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// 启动外部命令
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	cmd.Wait()
+	return nil
+}

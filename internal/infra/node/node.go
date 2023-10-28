@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 	"webscan/config"
@@ -303,12 +305,15 @@ func (r *Repository) StartNuclei(task *entity.NodeTask) error {
 				}
 
 				taskConfig := r.config.GetTaskConfig()
-				nucleiOutputPath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".scan")
+				nucleiOutputPath := filepath.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".scan")
+				//nucleiOutputPath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".scan")
 
 				//获取模板目录
 				templatesDir := r.config.GetAppConfig().Templates
+				//获取扫描器路径
+				scannerPath := r.config.GetAppConfig().Scanner
 				r.logger.Infof("[StartNuclei] task id: %d, target id: %d, templatesDir: %s", task.TaskID, task.TargetID, templatesDir)
-				err = r.nuclei.StartV2(task, templatesDir, []string{scans[0]}, nucleiOutputPath)
+				err = r.nuclei.StartV3(task, scannerPath, templatesDir, scans, nucleiOutputPath)
 				goto gout
 			}
 		}
@@ -367,202 +372,6 @@ func (r *Repository) ResumeTask(task *entity.NodeTask) error {
 	return nil
 }
 
-//------------
-
-//// GetTaskByTaskAndTargetID 使用taskID查询多条记录
-//func (r *Repository) GetTaskByTaskAndTargetID(taskID, targetID uint) (entity.NodeTask, error) {
-//	var task entity.NodeTask
-//	err := r.mySqlite.Where("task_id = ? and target_id = ?", taskID, targetID).First(&task).Error
-//	return task, err
-//}
-
-//func (r *Repository) UpdateTaskStatus(id uint, key, value string) error {
-//	updateFields := map[string]interface{}{
-//		key: value,
-//	}
-//	err := r.mySqlite.Model(&entity.NodeTask{}).Where("id = ?", id).Updates(updateFields).Error
-//	return err
-//}
-
-//type DiscoveredHost struct {
-//	TaskID         uint     `json:"task_id"`
-//	TargetID       uint     `json:"target_id"`
-//	ScanTarget     string   `json:"scan_target"`
-//	DiscoveredHost []string `json:"discovered_host"`
-//}
-//
-//type CrawlURL struct {
-//	TaskID     uint     `json:"task_id"`
-//	TargetID   uint     `json:"target_id"`
-//	ScanTarget string   `json:"scan_target"`
-//	CrawlURL   []string `json:"craw_url"`
-//}
-
-//// StartNuclei 启动Nuclei扫描目标
-//func (n *NodeRepository) StartNuclei(task *entity.NodeTask) error {
-//	idStr := strconv.FormatUint(uint64(task.ID), 10)
-//	taskIDStr := strconv.FormatUint(uint64(task.TaskID), 10)
-//	targetIDStr := strconv.FormatUint(uint64(task.TargetID), 10)
-//
-//	scanFilePath := path.Join(n.config.GetTaskConfig().DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".crawl.scan")
-//	var scans []string
-//	//检查文件是否存在
-//	if _, err := on.Stat(scanFilePath); on.IsNotExist(err) {
-//		scans = append(scans, task.Target)
-//	} else {
-//		// 打开文件
-//		file, err := on.Open(scanFilePath)
-//		if err != nil {
-//			return err
-//		}
-//		defer file.Close()
-//
-//		// 按行读取文件内容
-//		scanner := bufio.NewScanner(file)
-//		// 逐行读取文件内容
-//		for scanner.Scan() {
-//			line := scanner.Text()
-//			scans = append(scans, line)
-//		}
-//		// 检查是否出现了扫描错误
-//		if err := scanner.Err(); err != nil {
-//			return err
-//		}
-//	}
-//
-//	if len(scans) == 0 {
-//		return nil
-//	}
-//
-//	taskConfig := n.config.GetTaskConfig()
-//	nucleiOutputPath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".scan")
-//
-//	//获取模板目录
-//	templatesDir := n.config.GetAppConfig().Templates
-//	n.logger.Infof("[StartNuclei] task id: %d, target id: %d, templatesDir: %s", task.TaskID, task.TargetID, templatesDir)
-//	return n.nuclei.Start(task, templatesDir, []string{scans[0]}, nucleiOutputPath)
-//}
-//
-//// GetNextTask 获取下一个要执行的任务
-//func (n *NodeRepository) GetNextTask() (entity.NodeTask, error) {
-//	var task entity.NodeTask
-//	err := n.mySqlite.Where("status != ?", "finished").First(&task).Error
-//	return task, err
-//}
-
-//func (r *Repository) GetTaskScanResult(taskID, targetID uint) (map[string]interface{}, error) {
-//	var task entity.NodeTask
-//	err := r.mySqlite.Where("task_id = ? and target_id = ?", taskID, targetID).Find(&task).Error
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	taskConfig := r.configFace.GetTaskConfig()
-//	idStr := strconv.FormatUint(uint64(task.ID), 10)
-//	taskIDStr := strconv.FormatUint(uint64(task.TaskID), 10)
-//	targetIDStr := strconv.FormatUint(uint64(task.TargetID), 10)
-//
-//	discoveredHostFilePath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".crawl.discovered")
-//	crawlFilePath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".crawl.scan")
-//	scanFilePath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".scan")
-//
-//	discoveredHostFile, err := os.Open(discoveredHostFilePath)
-//	if err != nil {
-//		return nil, err
-//	}
-//	defer discoveredHostFile.Close()
-//	discoveredHostLines := readLines(discoveredHostFile)
-//	dh := DiscoveredHost{
-//		TaskID:         task.TaskID,
-//		TargetID:       task.TargetID,
-//		ScanTarget:     task.Target,
-//		DiscoveredHost: discoveredHostLines,
-//	}
-//
-//	crawlFile, err := os.Open(crawlFilePath)
-//	if err != nil {
-//		return nil, err
-//	}
-//	defer crawlFile.Close()
-//	crawlLines := readLines(crawlFile)
-//	cls := CrawlURL{
-//		TaskID:     task.TaskID,
-//		TargetID:   task.TargetID,
-//		ScanTarget: task.Target,
-//		CrawlURL:   crawlLines,
-//	}
-//
-//	scanFile, err := os.Open(scanFilePath)
-//	if err != nil {
-//		return nil, err
-//	}
-//	defer scanFile.Close()
-//	scanLines := readLines(scanFile)
-//
-//	var newScanLines []map[string]interface{}
-//	for _, line := range scanLines {
-//		var l map[string]interface{}
-//		err := json.Unmarshal([]byte(line), &l)
-//		if err != nil {
-//			r.logFace.Errorf("json unmarshal error: %v", err)
-//			continue
-//		}
-//
-//		l["task_id"] = task.TaskID
-//		l["target_id"] = task.TargetID
-//		l["scan_target"] = task.Target
-//		l["target_vuln_id"] = uuid.New().String()
-//
-//		newScanLines = append(newScanLines, l)
-//	}
-//
-//	scanResults := make(map[string]interface{})
-//	scanResults["discovered_host"] = dh
-//	scanResults["crawl"] = cls
-//	scanResults["scan"] = newScanLines
-//
-//	return scanResults, err
-//}
-//
-//func (r *Repository) GetTaskScanStatus(taskID, targetID uint) (string, error) {
-//	var task entity.NodeTask
-//	err := r.mySqlite.Where("task_id = ? and target_id = ?", taskID, targetID).Find(&task).Error
-//	return task.Status, err
-//}
-
-//func readLines(f io.Reader) []string {
-//	scanner := bufio.NewScanner(f)
-//
-//	var lines []string
-//	for scanner.Scan() {
-//		line := scanner.Text()
-//		lines = append(lines, line)
-//	}
-//
-//	//// 检查扫描过程中是否出现错误
-//	//if err := scanner.Err(); err != nil {
-//	//
-//	//}
-//	return lines
-//}
-
-//// GetNextTask 获取下一个要执行的任务
-//func (r *Repository) GetNextTask() (entity.NodeTask, error) {
-//	var task entity.NodeTask
-//	err := r.mySqlite.Where("status != ?", "finished").First(&task).Error
-//	return task, err
-//}
-
-//// / ----------------
-//func (r *Repository) TaskState(task *entity.NodeTask) ([]byte, error) {
-//	state := r.stateCache.GetState(task.ID)
-//	if state != nil {
-//		stateByte, err := json.Marshal(state)
-//		return stateByte, err
-//	}
-//	return nil, "not_found"
-//}
-
 func (r *Repository) FindOneTask(taskID, targetID uint) (entity.NodeTask, error) {
 	var task entity.NodeTask
 	err := r.mySqlite.Where("task_id = ? and target_id = ?", taskID, targetID).First(&task).Error
@@ -597,73 +406,6 @@ func (r *Repository) ResumePausedTask(taskID uint) error {
 
 // GetCrawledResult 获取爬虫结果
 func (r *Repository) GetCrawledResult(id, taskID, targetID uint, target string) (map[string]interface{}, error) {
-	//var task entity.SlaveTask
-	//err := s.mySqlite.Where("task_id = ? and target_id = ?", taskID, targetID).Find(&task).Error
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//taskConfig := s.config.GetTaskConfig()
-	//idStr := strconv.FormatUint(uint64(task.ID), 10)
-	//taskIDStr := strconv.FormatUint(uint64(task.TaskID), 10)
-	//targetIDStr := strconv.FormatUint(uint64(task.TargetID), 10)
-	//
-	//discoveredHostFilePath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".crawl.discovered")
-	//crawlFilePath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".crawl.scan")
-	//scanFilePath := path.Join(taskConfig.DataDir, idStr+"-"+taskIDStr+"-"+targetIDStr+".scan")
-	//
-	//discoveredHostFile, err := os.Open(discoveredHostFilePath)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//defer discoveredHostFile.Close()
-	//discoveredHostLines := readLines(discoveredHostFile)
-	//dh := c
-	//
-	//crawlFile, err := os.Open(crawlFilePath)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//defer crawlFile.Close()
-	//crawlLines := readLines(crawlFile)
-	//cls := CrawlURL{
-	//	TaskID:     task.TaskID,
-	//	TargetID:   task.TargetID,
-	//	ScanTarget: task.Target,
-	//	CrawlURL:   crawlLines,
-	//}
-	//
-	//scanFile, err := os.Open(scanFilePath)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//defer scanFile.Close()
-	//scanLines := readLines(scanFile)
-	//
-	//var newScanLines []map[string]interface{}
-	//for _, line := range scanLines {
-	//	var l map[string]interface{}
-	//	err := json.Unmarshal([]byte(line), &l)
-	//	if err != nil {
-	//		s.logger.Errorf("json unmarshal error: %v", err)
-	//		continue
-	//	}
-	//
-	//	l["task_id"] = task.TaskID
-	//	l["target_id"] = task.TargetID
-	//	l["scan_target"] = task.Target
-	//	l["target_vuln_id"] = uuid.New().String()
-	//
-	//	newScanLines = append(newScanLines, l)
-	//}
-	//
-	//scanResults := make(map[string]interface{})
-	//scanResults["discovered_host"] = dh
-	//scanResults["crawl"] = cls
-	//scanResults["scan"] = newScanLines
-	//
-	//return scanResults, err
-	//// ------
 	idStr := strconv.FormatUint(uint64(id), 10)
 	taskIDStr := strconv.FormatUint(uint64(taskID), 10)
 	targetIDStr := strconv.FormatUint(uint64(targetID), 10)
@@ -767,6 +509,8 @@ func (r *Repository) ExecuteNextTask(interval int) {
 					}
 
 					r.StartTask(&nextTask)
+					runtime.GC()
+					time.Sleep(5)
 				}()
 			}
 		}

@@ -1,21 +1,22 @@
 app:
   role: master # master/slave
   address: 127.0.0.1
-  port: 10080
+  port: 18080
   #templates: C:\\Users\\Administrator\\nuclei-templates
-  templates: tt
+  templates: templates
+  scanner: scanner.exe
 
 database:
   mysql: root:zrtx@2023@tcp(172.16.130.226:3306)/riskeval?charset=utf8mb4&parseTime=True&loc=Local
 #  elasticsearch: http://172.16.130.226:9200
-  elasticsearch: http://172.16.160.96:9200
+  elasticsearch: http://127.0.0.1:9200
 
 task:
   max_task_num: 2
   data_dir: TASK_DATA_DIR
 
 log:
-    file_name: swarm.log
+    file_name: webscan.log
     level: debug
     data_dir: LOG_DATA_DIR
     max_age: 7 #days

@@ -1,13 +1,11 @@
 package runner
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -60,7 +58,6 @@ import (
 	"github.com/projectdiscovery/nuclei/v2/pkg/utils/yaml"
 	"github.com/projectdiscovery/retryablehttp-go"
 	ptrutil "github.com/projectdiscovery/utils/ptr"
-	stringsutil "github.com/projectdiscovery/utils/strings"
 )
 
 // Runner is a client for running the enumeration process.
@@ -68,7 +65,6 @@ type Runner struct {
 	output            output.Writer
 	interactsh        *interactsh.Client
 	options           *types.Options
-	templatesConfig   *config.Config
 	projectFile       *projectfile.ProjectFile
 	catalog           catalog.Catalog
 	progress          progress.Progress
@@ -218,6 +214,40 @@ func New(options *types.Options) (*Runner, error) {
 		os.Exit(0)
 	}
 
+	// Initialize the input source
+	hmapInput, err := hybrid.New(&hybrid.Options{
+		Options: options,
+		NotFoundCallback: func(target string) bool {
+			if !options.Cloud {
+				return false
+			}
+			parsed, parseErr := strconv.ParseInt(target, 10, 64)
+			if parseErr != nil {
+				if err := runner.cloudClient.ExistsDataSourceItem(nucleicloud.ExistsDataSourceItemRequest{Contents: target, Type: "targets"}); err == nil {
+					runner.cloudTargets = append(runner.cloudTargets, target)
+					return true
+				}
+				return false
+			}
+			if exists, err := runner.cloudClient.ExistsTarget(parsed); err == nil {
+				runner.cloudTargets = append(runner.cloudTargets, exists.Reference)
+				return true
+			}
+			return false
+		},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "could not create input provider")
+	}
+	runner.hmapInputProvider = hmapInput
+
+	// Create the output file if asked
+	outputWriter, err := output.NewStandardWriter(options)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not create output file")
+	}
+	runner.output = outputWriter
+
 	if options.JSONL && options.EnableProgressBar {
 		options.StatsJSON = true
 	}
@@ -282,6 +312,7 @@ func New(options *types.Options) (*Runner, error) {
 	}
 	if opts.HTTPClient == nil {
 		httpOpts := retryablehttp.DefaultOptionsSingle
+		httpOpts.KillIdleConn = true
 		httpOpts.Timeout = 20 * time.Second // for stability reasons
 		if options.Timeout > 20 {
 			httpOpts.Timeout = time.Duration(options.Timeout) * time.Second
@@ -398,50 +429,11 @@ func (r *Runner) Close() {
 // RunEnumeration sets up the input layer for giving input nuclei.
 // binary and runs the actual enumeration
 func (r *Runner) RunEnumeration() error {
-
-	options := r.options
-	// Initialize the input source
-	hmapInput, err := hybrid.New(&hybrid.Options{
-		Options: options,
-		NotFoundCallback: func(target string) bool {
-			if !options.Cloud {
-				return false
-			}
-			parsed, parseErr := strconv.ParseInt(target, 10, 64)
-			if parseErr != nil {
-				if err := r.cloudClient.ExistsDataSourceItem(nucleicloud.ExistsDataSourceItemRequest{Contents: target, Type: "targets"}); err == nil {
-					r.cloudTargets = append(r.cloudTargets, target)
-					return true
-				}
-				return false
-			}
-			if exists, err := r.cloudClient.ExistsTarget(parsed); err == nil {
-				r.cloudTargets = append(r.cloudTargets, exists.Reference)
-				return true
-			}
-			return false
-		},
-	})
-	if err != nil {
-		return errors.Wrap(err, "could not create input provider")
-	}
-	r.hmapInputProvider = hmapInput
-
-	outputWriter, err := output.NewStandardWriter(options)
-	if err != nil {
-		return errors.Wrap(err, "could not create output file")
-	}
-	// slog.Println(slog.DEBUG, "Output file created", outputWriter.filepath)
-	r.output = outputWriter
-
 	// If user asked for new templates to be executed, collect the list from the templates' directory.
-
 	if r.options.NewTemplates {
-		templatesLoaded, err := r.readNewTemplatesFile()
-		if err != nil {
-			return errors.Wrap(err, "could not get newly added templates")
+		if arr := config.DefaultConfig.GetNewAdditions(); len(arr) > 0 {
+			r.options.Templates = append(r.options.Templates, arr...)
 		}
-		r.options.Templates = append(r.options.Templates, templatesLoaded...)
 	}
 	if len(r.options.NewTemplatesWithVersion) > 0 {
 		if arr := installer.GetNewTemplatesInVersions(r.options.NewTemplatesWithVersion...); len(arr) > 0 {
@@ -494,6 +486,25 @@ func (r *Runner) RunEnumeration() error {
 		return errors.Wrap(err, "could not load templates from config")
 	}
 
+	var cloudTemplates []string
+	if r.options.Cloud {
+		// hook template loading
+		store.NotFoundCallback = func(template string) bool {
+			parsed, parseErr := strconv.ParseInt(template, 10, 64)
+			if parseErr != nil {
+				if err := r.cloudClient.ExistsDataSourceItem(nucleicloud.ExistsDataSourceItemRequest{Type: "templates", Contents: template}); err == nil {
+					cloudTemplates = append(cloudTemplates, template)
+					return true
+				}
+				return false
+			}
+			if exists, err := r.cloudClient.ExistsTemplate(parsed); err == nil {
+				cloudTemplates = append(cloudTemplates, exists.Reference)
+				return true
+			}
+			return false
+		}
+	}
 	if r.options.Validate {
 		if err := store.ValidateTemplates(); err != nil {
 			return err
@@ -544,9 +555,61 @@ func (r *Runner) RunEnumeration() error {
 		executorOpts.InputHelper.InputsHTTP = inputHelpers
 	}
 
+	enumeration := false
 	var results *atomic.Bool
+	if r.options.Cloud {
+		if r.options.ScanList {
+			err = r.getScanList(r.options.OutputLimit)
+		} else if r.options.DeleteScan != "" {
+			err = r.deleteScan(r.options.DeleteScan)
+		} else if r.options.ScanOutput != "" {
+			err = r.getResults(r.options.ScanOutput, r.options.OutputLimit)
+		} else if r.options.ListDatasources {
+			err = r.listDatasources()
+		} else if r.options.ListTargets {
+			err = r.listTargets()
+		} else if r.options.ListTemplates {
+			err = r.listTemplates()
+		} else if r.options.ListReportingSources {
+			err = r.listReportingSources()
+		} else if r.options.AddDatasource != "" {
+			err = r.addCloudDataSource(r.options.AddDatasource)
+		} else if r.options.RemoveDatasource != "" {
+			err = r.removeDatasource(r.options.RemoveDatasource)
+		} else if r.options.DisableReportingSource != "" {
+			err = r.toggleReportingSource(r.options.DisableReportingSource, false)
+		} else if r.options.EnableReportingSource != "" {
+			err = r.toggleReportingSource(r.options.EnableReportingSource, true)
+		} else if r.options.AddTarget != "" {
+			err = r.addTarget(r.options.AddTarget)
+		} else if r.options.AddTemplate != "" {
+			err = r.addTemplate(r.options.AddTemplate)
+		} else if r.options.GetTarget != "" {
+			err = r.getTarget(r.options.GetTarget)
+		} else if r.options.GetTemplate != "" {
+			err = r.getTemplate(r.options.GetTemplate)
+		} else if r.options.RemoveTarget != "" {
+			err = r.removeTarget(r.options.RemoveTarget)
+		} else if r.options.RemoveTemplate != "" {
+			err = r.removeTemplate(r.options.RemoveTemplate)
+		} else if r.options.ReportingConfig != "" {
+			err = r.addCloudReportingSource()
+		} else {
+			if len(store.Templates())+len(store.Workflows())+len(cloudTemplates) == 0 {
+				return errors.New("no templates provided for scan")
+			}
+			gologger.Info().Msgf("Running scan on cloud with URL %s", r.options.CloudURL)
+			results, err = r.runCloudEnumeration(store, cloudTemplates, r.cloudTargets, r.options.NoStore, r.options.OutputLimit)
+			enumeration = true
+		}
+	} else {
+		results, err = r.runStandardEnumeration(executorOpts, store, executorEngine)
+		enumeration = true
+	}
 
-	results, err = r.runStandardEnumeration(executorOpts, store, executorEngine)
+	if !enumeration {
+		return err
+	}
 
 	if r.interactsh != nil {
 		matched := r.interactsh.Close()
@@ -614,8 +677,6 @@ func (r *Runner) executeTemplatesInput(store *loader.Store, engine *core.Engine)
 	for _, template := range store.Templates() {
 		// workflows will dynamically adjust the totals while running, as
 		// it can't be known in advance which requests will be called
-
-		// gologger.Info().Msgf("模板走", template.Info.Name)
 		if len(template.Workflows) > 0 {
 			continue
 		}
@@ -742,36 +803,4 @@ func expandEndVars(f reflect.Value, fieldType reflect.StructField) {
 			}
 		}
 	}
-}
-
-// readNewTemplatesFile reads newly added templates from directory if it exists
-func (r *Runner) readNewTemplatesFile() ([]string, error) {
-	if r.templatesConfig == nil {
-		return nil, nil
-	}
-	additionsFile := filepath.Join(r.templatesConfig.TemplatesDirectory, ".new-additions")
-	file, err := os.Open(additionsFile)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	templatesList := []string{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		text := scanner.Text()
-		if text == "" {
-			continue
-		}
-		if isTemplate(text) {
-			templatesList = append(templatesList, text)
-		}
-	}
-	return templatesList, nil
-}
-
-// isTemplate is a callback function used by goflags to decide if given file should be read
-// if it is not a nuclei-template file only then file is read
-func isTemplate(filename string) bool {
-	return stringsutil.EqualFoldAny(filepath.Ext(filename), config.GetSupportTemplateFileExtensions()...)
 }

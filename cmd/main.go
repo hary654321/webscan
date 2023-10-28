@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"github.com/DeanThompson/ginpprof"
+	"github.com/gin-gonic/gin"
 	"webscan/config"
 	"webscan/internal/app"
 	cache2 "webscan/internal/infra/cache"
@@ -11,9 +14,6 @@ import (
 	"webscan/pkg/crawlergo"
 	"webscan/pkg/nuclei"
 	"webscan/utils/log"
-
-	"github.com/DeanThompson/ginpprof"
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -80,5 +80,5 @@ func main() {
 			masterGroup.POST("/delete_task", masterAPI.DeleteTaskHandler)
 		}
 	}
-	r.Run(":" + conf.App.Port)
+	r.Run(fmt.Sprintf(":%d", conf.App.Port))
 }

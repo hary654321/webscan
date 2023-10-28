@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v7/esapi"
+	"github.com/go-resty/resty/v2"
+	"gorm.io/gorm"
 	"strings"
 	"time"
 	"webscan/config"
@@ -12,11 +16,6 @@ import (
 	"webscan/internal/domain/repository"
 	"webscan/internal/model"
 	"webscan/utils/log"
-
-	"github.com/elastic/go-elasticsearch/v7"
-	"github.com/elastic/go-elasticsearch/v7/esapi"
-	"github.com/go-resty/resty/v2"
-	"gorm.io/gorm"
 )
 
 type MasterRepositoryImpl struct {
@@ -337,7 +336,7 @@ func (m *MasterRepositoryImpl) PullTaskResultLoop(interval int) {
 							m.logger.Errorf("update scan pull status error: %s", err.Error())
 							continue
 						}
-						m.logger.Infof("resp: %s", string(resp.Body()))
+						m.logger.Infof("resp len: %d", len(string(resp.Body())))
 					}
 				}()
 			}
