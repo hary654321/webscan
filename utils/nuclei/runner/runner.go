@@ -312,7 +312,6 @@ func New(options *types.Options) (*Runner, error) {
 	}
 	if opts.HTTPClient == nil {
 		httpOpts := retryablehttp.DefaultOptionsSingle
-		httpOpts.KillIdleConn = true
 		httpOpts.Timeout = 20 * time.Second // for stability reasons
 		if options.Timeout > 20 {
 			httpOpts.Timeout = time.Duration(options.Timeout) * time.Second
